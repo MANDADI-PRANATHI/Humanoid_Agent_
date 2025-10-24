@@ -1,0 +1,10 @@
+setup.py
+pose_init/__init__.py
+pose_init/module1.py
+pose_init/setup.py
+pose_init/test_module1.py
+pose_init.egg-info/PKG-INFO
+pose_init.egg-info/SOURCES.txt
+pose_init.egg-info/dependency_links.txt
+pose_init.egg-info/requires.txt
+pose_init.egg-info/top_level.txt
