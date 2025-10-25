@@ -199,67 +199,131 @@ class PoseExtractor:
         v = np.asarray(v, dtype=float).copy()
         v[1] = -v[1]
         return v
-
     def convert_to_joint_angles(self, skeleton, conf_thresh=0.1):
         """
-        Convert a single 25x3 skeleton to a dictionary of estimated angles (radians).
-        This is 2D-only and approximate.
-        Returns dict e.g. {'right_knee': x, 'left_knee': y, ...}
+        Extended joint-angle estimation from a BODY_25 skeleton (2D-based).
+        Returns a dict of named angle estimates (radians).
+        Produces estimates usable as initial guesses for the robot.
         """
+
         if skeleton is None:
             return {}
-        angles = {}
-        kp = lambda idx: skeleton[idx, :2].copy()
 
+        angles = {}
+        kp2 = lambda idx: skeleton[idx, :2].copy()
+        conf = lambda idx: skeleton[idx, 2]
+
+        # helper: safe vector from a->b with y-flip
+        def vec(a_idx, b_idx):
+            v = kp2(b_idx) - kp2(a_idx)
+            return self._flip_y(v)
+
+        # ------- LEGS -------
         # Right leg: RHip(9) -> RKnee(10) -> RAnkle(11)
-        if skeleton[9, 2] > conf_thresh and skeleton[10, 2] > conf_thresh and skeleton[11, 2] > conf_thresh:
-            thigh = self._flip_y(kp(10) - kp(9))
-            shank = self._flip_y(kp(11) - kp(10))
+        if conf(9) > conf_thresh and conf(10) > conf_thresh and conf(11) > conf_thresh:
+            thigh = vec(9, 10)
+            shank = vec(10, 11)
             angles['right_knee'] = self.signed_angle_2d(thigh, shank)
+            # ankle: shank -> foot (use RAnkle->RBigToe if available else use small toe/heel)
+            # try RBigToe (22), RSmallToe(23), RHeel(24)
+            if conf(22) > conf_thresh:
+                footvec = vec(11, 22)
+                angles['right_ankle'] = self.signed_angle_2d(shank, footvec)
+            elif conf(23) > conf_thresh:
+                footvec = vec(11, 23)
+                angles['right_ankle'] = self.signed_angle_2d(shank, footvec)
+            elif conf(24) > conf_thresh:
+                footvec = vec(11, 24)
+                angles['right_ankle'] = self.signed_angle_2d(shank, footvec)
 
         # Left leg: LHip(12) -> LKnee(13) -> LAnkle(14)
-        if skeleton[12, 2] > conf_thresh and skeleton[13, 2] > conf_thresh and skeleton[14, 2] > conf_thresh:
-            thigh = self._flip_y(kp(13) - kp(12))
-            shank = self._flip_y(kp(14) - kp(13))
+        if conf(12) > conf_thresh and conf(13) > conf_thresh and conf(14) > conf_thresh:
+            thigh = vec(12, 13)
+            shank = vec(13, 14)
             angles['left_knee'] = self.signed_angle_2d(thigh, shank)
+            if conf(19) > conf_thresh:
+                footvec = vec(14, 19)
+                angles['left_ankle'] = self.signed_angle_2d(shank, footvec)
+            elif conf(20) > conf_thresh:
+                footvec = vec(14, 20)
+                angles['left_ankle'] = self.signed_angle_2d(shank, footvec)
+            elif conf(21) > conf_thresh:
+                footvec = vec(14, 21)
+                angles['left_ankle'] = self.signed_angle_2d(shank, footvec)
 
         # Hip pitch estimates (midHip(8) -> Hip -> Knee)
-        if skeleton[8, 2] > conf_thresh:
-            if skeleton[9, 2] > conf_thresh and skeleton[10, 2] > conf_thresh:
-                v_mid_rhip = self._flip_y(kp(9) - kp(8))
-                v_rhip_rknee = self._flip_y(kp(10) - kp(9))
-                angles['right_hip_pitch_est'] = self.signed_angle_2d(v_mid_rhip, v_rhip_rknee)
-            if skeleton[12, 2] > conf_thresh and skeleton[13, 2] > conf_thresh:
-                v_mid_lhip = self._flip_y(kp(12) - kp(8))
-                v_lhip_lknee = self._flip_y(kp(13) - kp(12))
-                angles['left_hip_pitch_est'] = self.signed_angle_2d(v_mid_lhip, v_lhip_lknee)
+        if conf(8) > conf_thresh:
+            if conf(9) > conf_thresh and conf(10) > conf_thresh:
+                v_mid_rhip = vec(8, 9)
+                v_rhip_rknee = vec(9, 10)
+                angles['right_hip_pitch'] = self.signed_angle_2d(v_mid_rhip, v_rhip_rknee)
+            if conf(12) > conf_thresh and conf(13) > conf_thresh:
+                v_mid_lhip = vec(8, 12)
+                v_lhip_lknee = vec(12, 13)
+                angles['left_hip_pitch'] = self.signed_angle_2d(v_mid_lhip, v_lhip_lknee)
 
-        # simple shoulder spread
-        if skeleton[1, 2] > conf_thresh and skeleton[2, 2] > conf_thresh and skeleton[5, 2] > conf_thresh:
-            v_rshoulder = self._flip_y(kp(2) - kp(1))
-            v_lshoulder = self._flip_y(kp(5) - kp(1))
+        # ------- ARMS -------
+        # Right arm: RShoulder(2)->RElbow(3)->RWrist(4)
+        if conf(2) > conf_thresh and conf(3) > conf_thresh and conf(4) > conf_thresh:
+            upper = vec(2, 3)
+            fore = vec(3, 4)
+            angles['right_elbow'] = self.signed_angle_2d(upper, fore)
+            # approximate shoulder pitch: neck(1) -> rshoulder(2) relative to shoulder->elbow
+            if conf(1) > conf_thresh:
+                v_neck_rshoulder = vec(1, 2)
+                angles['right_shoulder_pitch'] = self.signed_angle_2d(v_neck_rshoulder, upper)
+
+        # Left arm: LShoulder(5)->LElbow(6)->LWrist(7)
+        if conf(5) > conf_thresh and conf(6) > conf_thresh and conf(7) > conf_thresh:
+            upper = vec(5, 6)
+            fore = vec(6, 7)
+            angles['left_elbow'] = self.signed_angle_2d(upper, fore)
+            if conf(1) > conf_thresh:
+                v_neck_lshoulder = vec(1, 5)
+                angles['left_shoulder_pitch'] = self.signed_angle_2d(v_neck_lshoulder, upper)
+
+        # Shoulder spread (optional)
+        if conf(2) > conf_thresh and conf(5) > conf_thresh and conf(1) > conf_thresh:
+            v_rshoulder = vec(1, 2)
+            v_lshoulder = vec(1, 5)
             angles['shoulder_spread_est'] = self.signed_angle_2d(v_rshoulder, v_lshoulder)
 
         return angles
 
-    # ---------------------------
-    # Retarget placeholder
-    # ---------------------------
-    def retarget_to_robot(self, angles_dict, joint_order=None):
+
+    def retarget_to_robot(self, angles_dict: dict, joint_order: list | None = None, urdf_joint_limits: dict | None = None):
         """
-        Placeholder retarget: produce a fixed-order theta_init numpy vector
-        using a deterministic ordering. Replace with URDF-based mapping later.
+        Retarget named angle estimates to a numeric theta_init vector.
+        - Default joint_order yields 10-length vector:
+            ['right_knee','left_knee','right_hip_pitch','left_hip_pitch',
+             'right_ankle','left_ankle','right_shoulder_pitch','left_shoulder_pitch',
+             'right_elbow','left_elbow']
+        - urdf_joint_limits: optional dict mapping joint_name_or_index -> (lower, upper) in radians;
+          will be used to clamp values if provided.
+        Returns numpy.float32 vector length = len(joint_order)
         """
-        default_order = ['right_knee', 'left_knee', 'right_hip_pitch_est', 'left_hip_pitch_est']
+        default_order = [
+            'right_knee','left_knee','right_hip_pitch','left_hip_pitch',
+            'right_ankle','left_ankle','right_shoulder_pitch','left_shoulder_pitch',
+            'right_elbow','left_elbow'
+        ]
         order = joint_order if joint_order is not None else default_order
-        vals = []
+
+        theta = []
         for name in order:
             v = angles_dict.get(name, None)
             if v is None:
-                vals.append(0.0)
+                theta.append(0.0)
             else:
-                vals.append(float(v))
-        return np.array(vals, dtype=np.float32)
+                # clamp if urdf limits provided (name may be mapping)
+                if urdf_joint_limits and name in urdf_joint_limits:
+                    lo, hi = urdf_joint_limits[name]
+                    # only clamp if limits appear valid
+                    if lo <= hi:
+                        v = max(lo, min(hi, float(v)))
+                theta.append(float(v))
+        return np.array(theta, dtype=np.float32)
+
 
     # ---------------------------
     # Drawing
