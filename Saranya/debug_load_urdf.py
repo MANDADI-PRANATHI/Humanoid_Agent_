@@ -2,7 +2,7 @@
 import pybullet as p, pybullet_data, os, sys
 p.connect(p.DIRECT)
 p.setAdditionalSearchPath(pybullet_data.getDataPath())
-urdf = os.path.join("assets","human_test.urdf")
+urdf = os.path.join("assets","humanoid.urdf")
 print("Loading:", urdf)
 try:
     uid = p.loadURDF(urdf, [0,0,1.0], p.getQuaternionFromEuler([0,0,0]), useFixedBase=False, flags=p.URDF_USE_SELF_COLLISION)
