@@ -1,4 +1,4 @@
-# sim_env/humanoid_env.py
+# sim_env/humanoid_env.py  -- updated excerpts (replace whole file with this if you like)
 
 import os
 import numpy as np
@@ -16,7 +16,7 @@ class HumanoidWalkEnv(gym.Env):
         self.urdf_path = urdf_path
         self.gui = gui
         self.timestep = timestep
-        self._raw_joint_map = joint_map
+        self._raw_joint_map = joint_map  # keep original map (names or indices)
         self.smoothing_steps = int(smoothing_steps)
 
         self.physics_client = None
@@ -25,21 +25,9 @@ class HumanoidWalkEnv(gym.Env):
         self.controllable_joints = []
         self.joint_limits = {}
 
-        # Default standing pose (easy to tweak)
-        self.default_pose = {
-            "right_hip_roll": 0.05,
-            "left_hip_roll": -0.05,
-            "right_knee": 0.15,
-            "left_knee": 0.15,
-            "right_ankle_pitch": 0.1,
-            "left_ankle_pitch": 0.1,
-            "right_ankle_roll": -0.05,
-            "left_ankle_roll": 0.05
-        }
-
-        # Start physics
+        # start physics and load robot once to build maps (we will reset simulation when user calls reset)
         self._start_physics()
-        # Load robot once to build joint maps
+        # load a temporary robot to build joint maps & convert joint_map to indices
         self._load_robot_and_build_maps(initial_load=True)
 
         n_ctrl = len(self.controllable_joints)
@@ -54,7 +42,7 @@ class HumanoidWalkEnv(gym.Env):
             self.physics_client = p.connect(p.DIRECT)
         p.setAdditionalSearchPath(pybullet_data.getDataPath())
         p.setTimeStep(self.timestep)
-        p.setGravity(0,0,-9.81)
+        p.setGravity(0, 0, -9.81)
 
     def _safe_float(self, x):
         try:
@@ -63,27 +51,98 @@ class HumanoidWalkEnv(gym.Env):
             return None
 
     def _is_limit_finite(self, lo, hi):
+        # consider limits finite only if they are numeric and reasonably bounded
         if lo is None or hi is None:
             return False
         if not (math.isfinite(lo) and math.isfinite(hi)):
             return False
+        # also ignore absurd huge values from URDF unlimited markers
         if abs(lo) > 1e6 or abs(hi) > 1e6:
             return False
         return True
 
     def _load_robot_and_build_maps(self, initial_load: bool = False):
+        # reset and load a robot to inspect joints
         p.resetSimulation()
         p.setGravity(0,0,-9.81)
         p.loadURDF("plane.urdf")
-        start_pos = [0,0,0.5]
+        # put robot slightly higher to reduce initial penetration risk
+        start_pos = [0, 0, 1.5]
         start_ori = p.getQuaternionFromEuler([0,0,0])
-        self.robot_id = p.loadURDF(self.urdf_path, start_pos, start_ori,
-                                   useFixedBase=False, flags=p.URDF_USE_SELF_COLLISION)
+        self.robot_id = p.loadURDF(self.urdf_path, start_pos, start_ori, useFixedBase=False, flags=p.URDF_USE_SELF_COLLISION)
 
         self.joint_name_to_index = {}
         self.controllable_joints = []
         self.joint_limits = {}
+        for i in range(p.getNumJoints(self.robot_id)):
+            info = p.getJointInfo(self.robot_id, i)
+            jname = info[1].decode('utf-8')
+            jtype = info[2]
+            lower = self._safe_float(info[8])
+            upper = self._safe_float(info[9])
+            self.joint_name_to_index[jname] = i
+            if jtype in (p.JOINT_REVOLUTE, p.JOINT_PRISMATIC, p.JOINT_SPHERICAL):
+                self.controllable_joints.append(i)
+                if self._is_limit_finite(lower, upper):
+                    self.joint_limits[i] = (lower, upper)
+                else:
+                    # mark as unbounded (no clamp)
+                    self.joint_limits[i] = None
 
+        # convert and freeze joint_map to indices (do this once)
+        self.joint_map = {}
+        if self._raw_joint_map is not None:
+            for t_idx, j in self._raw_joint_map.items():
+                if isinstance(j, str):
+                    if j in self.joint_name_to_index:
+                        self.joint_map[int(t_idx)] = self.joint_name_to_index[j]
+                    else:
+                        raise ValueError(f"joint_map refers to unknown joint name '{j}'")
+                else:
+                    # allow user provided joint index OR joint name index as int
+                    self.joint_map[int(t_idx)] = int(j)
+        else:
+            # default: map theta[0..min(9,len(controllable)-1)] to first controllable joints
+            for idx, ji in enumerate(self.controllable_joints[:10]):
+                self.joint_map[idx] = ji
+
+        # if initial_load==True, we keep this mapping for future resets
+        if initial_load:
+            # keep robot loaded for now; subsequent resets will reload the robot fresh
+            pass
+
+    def _clamp_to_limits(self, joint_index, value):
+        lim = self.joint_limits.get(joint_index, None)
+        if lim is None:
+            return value
+        lo, hi = lim
+        if lo is None or hi is None:
+            return value
+        if lo <= hi:
+            return max(lo, min(hi, value))
+        return value
+
+    def _read_positions(self):
+        pos = []
+        for j in self.controllable_joints:
+            s = p.getJointState(self.robot_id, j)
+            pos.append(s[0])
+        return np.array(pos, dtype=np.float32)
+
+    def reset(self, initial_pose: np.ndarray | None = None, settle_steps: int = 30):
+        # clear sim and load fresh robot (ensures consistent start)
+        p.resetSimulation()
+        p.setGravity(0,0,-9.81)
+        p.loadURDF("plane.urdf")
+        # spawn a bit higher to avoid initial interpenetration
+        start_pos = [0,0,1.5]
+        start_ori = p.getQuaternionFromEuler([0,0,0])
+        self.robot_id = p.loadURDF(self.urdf_path, start_pos, start_ori, useFixedBase=False, flags=p.URDF_USE_SELF_COLLISION)
+
+        # rebuild maps/limits based on newly loaded robot
+        self.joint_name_to_index = {}
+        self.controllable_joints = []
+        self.joint_limits = {}
         for i in range(p.getNumJoints(self.robot_id)):
             info = p.getJointInfo(self.robot_id, i)
             jname = info[1].decode('utf-8')
@@ -98,160 +157,64 @@ class HumanoidWalkEnv(gym.Env):
                 else:
                     self.joint_limits[i] = None
 
-        # convert joint_map to indices
-        self.joint_map = {}
-        if self._raw_joint_map is not None:
-            for t_idx, j in self._raw_joint_map.items():
-                if isinstance(j, str):
-                    if j in self.joint_name_to_index:
-                        self.joint_map[int(t_idx)] = self.joint_name_to_index[j]
-                    else:
-                        raise ValueError(f"joint_map refers to unknown joint name '{j}'")
-                else:
-                    self.joint_map[int(t_idx)] = int(j)
-        else:
-            for idx, ji in enumerate(self.controllable_joints[:10]):
-                self.joint_map[idx] = ji
+        # validate joint_map indices are present in this robot
+        for t_idx, jidx in list(self.joint_map.items()):
+            if jidx not in self.controllable_joints:
+                warnings.warn(f"joint_map target index {jidx} not in controllable joints; removing mapping")
+                del self.joint_map[t_idx]
 
-        if initial_load:
-            pass
+        # read current (default) positions
+        current = self._read_positions()
+        target = current.copy()
 
-    def _clamp_to_limits(self, joint_index, value):
-        lim = self.joint_limits.get(joint_index, None)
-        if lim is None:
-            return value
-        lo, hi = lim
-        if lo is None or hi is None:
-            return value
-        return max(lo, min(hi, value))
-
-    def _read_positions(self):
-        pos = []
-        for j in self.controllable_joints:
-            s = p.getJointState(self.robot_id, j)
-            pos.append(s[0])
-        return np.array(pos, dtype=np.float32)
-    def reset(self, initial_pose=None):
-        """
-        Reset the humanoid to the given initial pose (theta vector).
-        If no pose is given, the default standing pose is applied.
-        """
-
-        p.resetSimulation()
-        p.setGravity(0, 0, -9.8)
-        p.setTimeStep(1. / 240.)
-
-        # Reload robot
-        self.robot_id = p.loadURDF(self.urdf_path, [0, 0, 1.0],
-                                   p.getQuaternionFromEuler([0, 0, 0]),
-                                   useFixedBase=False)
-        self.controllable_joints = [
-            j for j in range(p.getNumJoints(self.robot_id))
-            if p.getJointInfo(self.robot_id, j)[2] == p.JOINT_REVOLUTE
-        ]
-        self.joint_name_to_index = {
-            p.getJointInfo(self.robot_id, j)[1].decode('utf-8'): j
-            for j in self.controllable_joints
-        }
-
-        # Initialize target joint positions
-        target = np.zeros(len(self.controllable_joints))
-
-        # --- STEP 1: Apply DEFAULT standing pose first ---
-        def set_if_present(name, val):
-            idx = self.joint_name_to_index.get(name)
-            if idx is not None and idx in self.controllable_joints:
-                pos_idx = self.controllable_joints.index(idx)
-                val = self._clamp_to_limits(idx, val)
-                target[pos_idx] = val
-
-        for name, val in self.default_pose.items():
-            set_if_present(name, val)
-
-        # --- STEP 2: Override with user-provided INITIAL POSE ---
+        # apply initial_pose if provided
         if initial_pose is not None:
             for t_idx, joint_idx in self.joint_map.items():
                 if t_idx >= len(initial_pose):
                     continue
                 val = float(initial_pose[t_idx])
                 val = self._clamp_to_limits(joint_idx, val)
+                # find index in the controllable_joints ordering
                 try:
                     pos_idx = self.controllable_joints.index(joint_idx)
                     target[pos_idx] = val
                 except ValueError:
+                    # this joint is not controllable in this robot instance
                     continue
 
-        # --- STEP 3: Apply the final joint targets in simulation ---
-        for i, j in enumerate(self.controllable_joints):
-            p.resetJointState(self.robot_id, j, target[i])
+        # set joints instantly to target using resetJointState (safer than commanding motors while in penetration)
+        for idx, j in enumerate(self.controllable_joints):
+            p.resetJointState(self.robot_id, j, target[idx], targetVelocity=0.0)
 
-        # Debug print for sanity check
-        print("\n[RESET DEBUG] Final joint targets applied:")
-        for i, j in enumerate(self.controllable_joints):
-            name = p.getJointInfo(self.robot_id, j)[1].decode('utf-8')
-            print(f"  {name:25s} -> {target[i]:.3f} rad")
-
-        # Optionally smooth transitions (disabled by default)
-        if hasattr(self, "smoothing_steps") and self.smoothing_steps > 1:
-            for step in range(self.smoothing_steps):
-                interp = (step + 1) / self.smoothing_steps
-                for i, j in enumerate(self.controllable_joints):
-                    p.setJointMotorControl2(
-                        self.robot_id,
-                        j,
-                        p.POSITION_CONTROL,
-                        targetPosition=target[i] * interp,
-                        force=100
-                    )
+        # allow physics to settle
+        for _ in range(settle_steps):
+            p.stepSimulation()
+            # do not sleep in GUI mode here too long; short sleep helps see physics
+            if self.gui:
+                time.sleep(self.timestep)
+        # --- safety fallback: if robot base is too low after settlement, raise it ---
+        base_pos, base_ori = p.getBasePositionAndOrientation(self.robot_id)
+        base_z = base_pos[2]
+        desired_min_z = 0.50  # conservative minimum initial base height for humanoid
+        if base_z < desired_min_z:
+            delta = desired_min_z - base_z
+            new_base_pos = (base_pos[0], base_pos[1], base_z + delta + 0.02)
+            p.resetBasePositionAndOrientation(self.robot_id, new_base_pos, base_ori)
+            # step a few times to stabilise contacts after raising
+            for _ in range(60):
                 p.stepSimulation()
+                if self.gui:
+                    time.sleep(self.timestep)
 
-        obs = self._get_observation()
-        return obs
-
-    def reset_robot(robot_id, joint_mapping, theta):
-        """
-        Safely resets humanoid_10theta_stable URDF to a specified pose vector.
-        Ensures correct grounding and orientation.
-        """
-
-        # --- 1. Reset base pose ---
-        base_height = 0.95   # estimated pelvis height
-        p.resetBasePositionAndOrientation(
-            robot_id,
-            [0, 0, base_height],
-            p.getQuaternionFromEuler([0, 0, 0])  # upright, facing +X
-        )
-
-        # --- 2. Make sure theta length matches mapping ---
-        if len(theta) != len(joint_mapping):
-            print(f"[reset_robot_to_pose] Warning: theta length {len(theta)} != mapping length {len(joint_mapping)}")
-
-        # --- 3. Apply joint angles safely ---
-        for i, (theta_val, (joint_index, joint_name, lower, upper)) in enumerate(joint_mapping):
-            angle = -theta_val  # try negative; flip if limbs bend opposite way
-            clamped = float(np.clip(angle, lower, upper))
-
-            p.resetJointState(robot_id, joint_index, clamped)
-            print(f"{joint_name:24s} -> applied {clamped:+.3f} rad (orig {angle:+.3f}, lims {lower:+.2f}..{upper:+.2f})")
-
-        # --- 4. Let physics settle ---
-        p.stepSimulation()
-        pos, orn = p.getBasePositionAndOrientation(robot_id)
-        print("[DEBUG] Final base pos:", pos, "Euler:", p.getEulerFromQuaternion(orn))
-
-        # --- 5. Adjust base if floating/sinking ---
-        if pos[2] > 1.2 or pos[2] < 0.8:
-            new_z = base_height - (pos[2] - base_height)
-            p.resetBasePositionAndOrientation(robot_id, [0, 0, new_z], orn)
-            print(f"[AUTO-ADJUST] Base Z corrected to {new_z:.3f}")
-
+        # return observation (no infinite loop)
+        return self._get_observation()
 
     def _get_observation(self):
-        pos, vel = [], []
+        pos = []
+        vel = []
         for j in self.controllable_joints:
             s = p.getJointState(self.robot_id, j)
-            pos.append(s[0])
-            vel.append(s[1])
+            pos.append(s[0]); vel.append(s[1])
         base_pos, base_ori = p.getBasePositionAndOrientation(self.robot_id)
         base_lin_vel, base_ang_vel = p.getBaseVelocity(self.robot_id)
         base_euler = p.getEulerFromQuaternion(base_ori)
@@ -279,7 +242,7 @@ class HumanoidWalkEnv(gym.Env):
                                     jointIndices=self.controllable_joints,
                                     controlMode=p.POSITION_CONTROL,
                                     targetPositions=action.tolist(),
-                                    positionGains=[0.7] * n)
+                                    positionGains=[0.12] * n)
         p.stepSimulation()
         obs = self._get_observation()
         reward = self._compute_reward()
@@ -293,10 +256,16 @@ class HumanoidWalkEnv(gym.Env):
         roll, pitch, _ = p.getEulerFromQuaternion(base_ori)
         upright_penalty = abs(roll) + abs(pitch)
         return float(vx - 0.5 * upright_penalty)
-
     def _check_fallen(self):
         base_pos, _ = p.getBasePositionAndOrientation(self.robot_id)
-        return base_pos[2] < 0.4
+        base_z = base_pos[2]
+        # if baseline set, use a fraction of it
+        baseline = getattr(self, "baseline_height", None)
+        if baseline is not None and baseline > 0:
+            return base_z < (0.45 * baseline)
+        # fallback: less aggressive threshold now that we raise start z
+        return base_z < 0.20
+
 
     def close(self):
         if self.physics_client is not None:
@@ -305,4 +274,24 @@ class HumanoidWalkEnv(gym.Env):
             except Exception:
                 pass
             self.physics_client = None
-
+    def compute_baseline_height(self, settle_steps: int = 200):
+        """
+        Reset to a safe nominal pose and record baseline base height for adaptive fall-checks.
+        Call this once after env creation.
+        """
+        # build a safe nominal theta vector (zeros with small knee bend if available)
+        nominal = np.zeros(max(self.joint_map.keys())+1 if self.joint_map else len(self.controllable_joints), dtype=np.float32)
+        # try to set knees to a small bend if known in mapping
+        for t_idx, jidx in self.joint_map.items():
+            # find name
+            name = None
+            for n,i in self.joint_name_to_index.items():
+                if i == jidx:
+                    name = n; break
+            if name and "knee" in name:
+                nominal[t_idx] = 0.6
+        # perform reset (this will also set baseline)
+        obs = self.reset(initial_pose=nominal, settle_steps=settle_steps)
+        base_pos, _ = p.getBasePositionAndOrientation(self.robot_id)
+        self.baseline_height = float(base_pos[2])
+        return self.baseline_height

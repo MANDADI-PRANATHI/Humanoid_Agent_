@@ -190,7 +190,7 @@ class PoseExtractor:
             cos_angle = np.clip(np.dot(thigh, shank) / (np.linalg.norm(thigh)*np.linalg.norm(shank)+1e-8), -1,1)
             angles_3d['left_knee_3d'] = np.arccos(cos_angle)
 
-        vertical = np.array([0, 0, 1.0])  # Z-axis
+        vertical = np.array([0, -1.0, 0])  # Z-axis
 
          # Right Hip
         if conf(8) > conf_thresh and conf(9) > conf_thresh:
@@ -345,6 +345,10 @@ class PoseExtractor:
         theta_dict_3d = {}
         theta_init_vec = None
         theta_init_vec_3d = None
+        print("\nDEBUG: retarget_to_robot (2D) len:", None if theta_init_vec is None else len(theta_init_vec))
+        print(" theta_init_vector:", theta_init_vec)
+        print("\nDEBUG: retarget_to_robot_3d (3D) len:", None if theta_init_vec_3d is None else len(theta_init_vec_3d))
+        print(" theta_init_vector_3d:", theta_init_vec_3d)
         if sel_skeleton is not None:
             theta_dict = self.convert_to_joint_angles(sel_skeleton, conf_thresh)
             theta_init_vec = self.retarget_to_robot(theta_dict)
@@ -373,34 +377,42 @@ class PoseExtractor:
             theta_init_vector=theta_init_vec,
             theta_init_vector_3d=theta_init_vec_3d
         )
-
     def retarget_to_robot(self, angles_dict, joint_order=None, urdf_joint_limits=None):
+        """
+        Build theta vector in the desired joint_order.
+        If urdf_joint_limits is provided (dict of name -> (lo,hi)), clamp to those limits.
+        """
         default_order = [
-        'right_knee','left_knee','right_hip_pitch','left_hip_pitch',
-        'right_ankle','left_ankle','right_shoulder_pitch','left_shoulder_pitch',
-        'right_elbow','left_elbow'
-    ]
+            'right_knee','left_knee','right_hip_pitch','left_hip_pitch',
+            'right_ankle','left_ankle','right_shoulder_pitch','left_shoulder_pitch',
+            'right_elbow','left_elbow'
+        ]
         order = joint_order if joint_order is not None else default_order
         theta = []
         for name in order:
-            v = angles_dict.get(name, 0.0)
+            v = float(angles_dict.get(name, 0.0))
+            # clamp if limits provided
             if urdf_joint_limits and name in urdf_joint_limits:
                 lo, hi = urdf_joint_limits[name]
-                if lo <= hi:
-                    v = max(lo, min(hi, float(v)))
-                    theta.append(float(v))
-
+                if lo is not None and hi is not None and lo <= hi:
+                    v = max(lo, min(hi, v))
+            theta.append(v)   # ALWAYS append (fixed bug)
         return np.array(theta, dtype=np.float32)
 
-    
     def retarget_to_robot_3d(self, angles_dict_3d, joint_order=None):
+        """
+        Build theta vector from 3D angle dict. Default order must use _3d suffixes consistently.
+        """
         default_order = [
-        'right_knee_3d','left_knee_3d','right_hip_pitch_3d','left_hip_pitch_3d',
-        'right_ankle','left_ankle','right_shoulder_pitch_3d','left_shoulder_pitch_3d','right_elbow_3d','left_elbow_3d'
-    ]
+            'right_knee_3d','left_knee_3d','right_hip_pitch_3d','left_hip_pitch_3d',
+            'right_ankle_3d','left_ankle_3d','right_shoulder_pitch_3d','left_shoulder_pitch_3d',
+            'right_elbow_3d','left_elbow_3d'
+        ]
         order = joint_order if joint_order is not None else default_order
         theta = [float(angles_dict_3d.get(name, 0.0)) for name in order]
         return np.array(theta, dtype=np.float32)
+
+    
 
 
 

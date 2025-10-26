@@ -9,9 +9,9 @@ import pybullet as p
 from module import PoseExtractor
 from humanoid_env import HumanoidWalkEnv
 
-MODEL_FOLDER = "./models/"   # change if different
-IMAGE_PATH = "./images/test2.jpg"                         # put example image here
-URDF_PATH = os.path.join("assets", "humanoid_10theta.urdf")
+MODEL_FOLDER = "/home/prana/openpose/models/"   # change if different
+IMAGE_PATH = "../test4.png"                         # put example image here
+URDF_PATH = os.path.join("../assets", "humanoid_10theta.urdf")
 
 def clamp_to_limits(env, theta_vector):
     """Clamp theta values to the env's mapped joint limits (if available)."""
@@ -45,6 +45,25 @@ def print_mapping_and_limits(env):
         print(f" theta[{theta_idx}] -> joint_index {joint_idx} name='{jname}' limits={lim}")
     print("===============================================================")
 
+def debug_pose_application(env, theta):
+    print("\n--- DEBUG: theta -> joint targets check ---")
+    for t_idx, joint_idx in sorted(env.joint_map.items()):
+        # find joint name in env
+        jname = None
+        for nm, idx in env.joint_name_to_index.items():
+            if idx == joint_idx:
+                jname = nm; break
+        val = float(theta[t_idx]) if t_idx < len(theta) else None
+        lim = env.joint_limits.get(joint_idx, None)
+        clamped = None
+        if val is not None and lim is not None:
+            lo, hi = lim
+            if lo is not None and hi is not None:
+                clamped = max(lo, min(hi, val))
+        print(f" theta[{t_idx:2d}] -> joint_idx {joint_idx:2d} name='{jname}'  value={val}  limits={lim}  clamped={clamped}")
+    print("--- end debug ---\n")
+
+
 def main():
     extractor = PoseExtractor(model_folder=MODEL_FOLDER)
     res = extractor.get_initial_pose(IMAGE_PATH, return_drawn=False)
@@ -72,7 +91,11 @@ def main():
 
     # create env with GUI so we can see it
     env = HumanoidWalkEnv(urdf_path=URDF_PATH, gui=True, joint_map=joint_map, smoothing_steps=12)
-
+    print_mapping_and_limits(env)
+    print("theta length:", len(theta), "mapped indices:", sorted(joint_map.keys()))
+    debug_pose_application(env, theta)
+    obs = env.reset(initial_pose=theta)   # <--- important: set the initial pose here
+    print("Applied initial pose; observation length:", obs.shape)
     print("\nGUI is active — press Ctrl+C or close the window to exit.")
     try:
         while True:
