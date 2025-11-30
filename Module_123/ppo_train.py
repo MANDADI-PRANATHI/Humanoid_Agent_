@@ -11,8 +11,8 @@ import torch.optim as optim
 from tensorboardX import SummaryWriter
 from tqdm import tqdm
 
-from lib.agent_ppo import PPOAgent
-from lib.buffer_ppo import PPOBuffer
+from agent_ppo import PPOAgent
+from buffer_ppo import PPOBuffer
 
 from humanoid_env import HumanoidWalkEnv
 
