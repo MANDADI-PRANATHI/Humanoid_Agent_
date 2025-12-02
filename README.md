@@ -62,7 +62,7 @@ Humanoid_Agent_/
 │   └── ...
 │
 │
-├── assets/ humanoid_10theta.urdf                   # Models, configs, weights (if needed)
+├── assets/ humanoid_10theta.urdf                   #URDF files
 │
 ├── requirements.txt
 ├── .gitignore
@@ -119,16 +119,6 @@ python Module1_2_new/test_module1.py --image_path .images/test_img3.jpg
 - **Visualization Tools**: Built-in utilities for overlay rendering and animation generation
 - **Batch Processing**: Process multiple images efficiently
 - **Extensible Pipeline**: Add custom preprocessing, postprocessing, or agent modules
-
----
-
-## 📦 Dependencies
-
-Main dependencies include:
-
-- `opencv-python` - Image processing and visualization
-- `numpy` - Numerical operations
--  `openpose` - Pose estimation (depending on implementation)
 ---
 
 
