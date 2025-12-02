@@ -12,6 +12,7 @@ import cv2
 from module import PoseExtractor
 from humanoid_env import HumanoidWalkEnv
 from Biped_Pybullet.main import walk
+from train_dqn import DQNAgent
 
 
 # ---------------------------
