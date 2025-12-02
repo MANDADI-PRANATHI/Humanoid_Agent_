@@ -1,0 +1,12 @@
+pybullet
+matplotlib
+control
+numpy
+gymnasium
+pybullet
+pybullet_data
+opencv-python
+Pillow
+matplotlib
+tqdm
+argparse
