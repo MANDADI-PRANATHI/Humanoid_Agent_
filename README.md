@@ -108,7 +108,7 @@ bash getModels.sh
 ### How to run ?
 ```bash
 cd Module_final
-python Module1_2_new/test_module1.py --image_path .images/test_img3.jpg 
+python test_module3.py --image_path test3.jpg 
 ```
 ---
 
