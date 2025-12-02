@@ -7,7 +7,6 @@ Includes utilities for reading images, extracting pose/keypoints, saving output 
 
 ## 🎥 Demo & Output Samples
 
-> Add your output images & GIFs here once uploaded.
 
 ###  Example Input vs Output 
 
@@ -18,7 +17,7 @@ Includes utilities for reading images, extracting pose/keypoints, saving output 
  
 ### 🎞️ Animation / GIF (Pose Overlay, Pipeline, Motion)
 
-![Demo Pose](output_isl.gif)
+![Demo Pose](op_isllll.gif)
 
 
 
