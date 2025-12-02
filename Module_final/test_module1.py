@@ -13,7 +13,7 @@ from module import PoseExtractor
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--image", "-i", required=True, help="Input image path")
-    parser.add_argument("--model_folder", "-m", default="./models/", help="OpenPose models folder")
+    parser.add_argument("--model_folder", "-m", default="../models/", help="OpenPose models folder")
     parser.add_argument("--out", "-o", default="debug_skeleton.jpg", help="Output debug image path")
     args = parser.parse_args()
 
