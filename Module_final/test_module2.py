@@ -103,19 +103,19 @@ def main():
     parser.add_argument(
         "--model_folder",
         type=str,
-        default="./models/",
+        default="../models/",
         help="Path to the model folder (default: ./models/)"
     )
     parser.add_argument(
         "--image_path",
         type=str,
-        default="./images/test8.jpg",
+        default="../images/test8.jpg",
         help="Path to the input image (default: ./images/test8.jpg)"
     )
     parser.add_argument(
         "--urdf_path",
         type=str,
-        default="./assets/humanoid_10theta.urdf",
+        default="../assets/humanoid_10theta.urdf",
         help="Path to the humanoid URDF file (default: ./assets/humanoid_10theta.urdf)"
     )
 
