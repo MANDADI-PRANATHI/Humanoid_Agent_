@@ -108,7 +108,7 @@ bash getModels.sh
 ### How to run ?
 ```bash
 cd Module_final
-python test_module3.py --image_path test3.jpg 
+python test_module3.py --image_path ../Test_images/final_test_1.jpg --model_folder ../../models/ --urdf_path ../assets/humanoid_10theta.urdf
 ```
 ---
 
