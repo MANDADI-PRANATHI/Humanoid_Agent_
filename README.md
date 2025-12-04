@@ -16,7 +16,7 @@ Includes utilities for reading images, extracting pose/keypoints, saving output 
 
 | Input Image | 3d Pybullet Model |
 |-------------|------------------|
-| ![Input](Module2_ip.jpg) | ![Output](Module2_op.jpg) |
+| ![Input](Module2_ip.png) | ![Output](Module2_op.png) |
 
 
 ### 🎞️ Animation / GIF (Module 3)
