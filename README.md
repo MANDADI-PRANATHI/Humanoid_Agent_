@@ -8,14 +8,18 @@ Includes utilities for reading images, extracting pose/keypoints, saving output 
 ## 🎥 Demo & Output Samples
 
 
-###  Example Input vs Output 
+###  Example Input vs Output (Module 1)
 
-| Input Image | Processed Output |3D Pybullet Model
-|-------------|------------------|------------------|
-| ![Input](test3.jpg) | ![Output](test3_output.jpg) |![Model](output.jpg)
+| Input Image | Processed Output |
+|-------------|------------------|
+| ![Input](test3.jpg) | ![Output](test3_output.jpg) |
 
- 
-### 🎞️ Animation / GIF (Pose Overlay, Pipeline, Motion)
+| Input Image | 3d Pybullet Model |
+|-------------|------------------|
+| ![Input](Module2_ip.jpg) | ![Output](Module2_op.jpg) |
+
+
+### 🎞️ Animation / GIF (Module 3)
 
 ![Demo Pose](op_isllll.gif)
 
